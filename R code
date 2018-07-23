@@ -1,0 +1,101 @@
+library(dplyr)
+library(ggplot2)
+library(ggthemes)
+library(RColorBrewer)
+library(tm)
+library(SnowballC)
+library(wordcloud)
+
+#Input data
+applestore <- read.csv("/Users/jinggao/Desktop/projects/apple store/AppleStore.csv", header = TRUE)
+applestore$size_mb <- applestore$size_bytes/1024/1024
+apple.des <- read.csv("/Users/jinggao/Desktop/projects/apple store/appleStore_description.csv", header = TRUE)
+#dimensions for dataset
+dim(applestore)
+dim(apple.des)
+# counting missing values
+colSums(apply(applestore,c(1,2),is.na))
+colSums(apply(apple.des,c(1,2),is.na))
+
+#grouped by prime genre
+app.genre <- as.data.frame(sort(table(applestore$prime_genre)))
+colnames(app.genre) <- c("prime_genre", "total")
+getPalette = colorRampPalette(brewer.pal(8, "Accent"))
+colorcount <- length(unique(app.genre$prime_genre))
+
+genre.plot <- ggplot(app.genre, aes(x=prime_genre, y=total,
+                fill=getPalette(colorcount),
+                label=total)) +
+    geom_bar(stat='identity', position='identity', color="black")+
+    scale_y_sqrt()+
+    coord_flip()+
+    geom_text(hjust =1.2, vjust=0.5,color="white",size=3)+
+     theme_igray()+
+     theme(legend.position="none")+
+     ggtitle("Apple Apps Grouped by Prime Genre")
+genre.plot
+
+#grouped by price
+app.price <- as.data.frame(sort(table(applestore$price)))
+colnames(app.price) <- c("price", "total")
+app.price$price <- as.character(app.price$price)
+add <- c(">19.99",sum(app.price$total[as.numeric(app.price$price)>19.99]))
+app.price <- rbind(app.price[which(as.numeric(app.price$price)<=19.99),], add)
+app.price$total <- as.integer(app.price$total)
+
+getPalette = colorRampPalette(brewer.pal(8, "Accent"))
+colorcount <- length(unique(app.price$price))
+
+price.plot <- ggplot(app.price, aes(x=price, y=total,
+                fill=getPalette(colorcount),
+                label=total)) +
+    geom_bar(stat='identity', position='identity', color="black")+
+    scale_y_sqrt()+
+    coord_flip()+
+    geom_text(hjust =1.2, vjust=0.5,color="white",size=2)+
+     theme_igray()+
+     theme(legend.position="none")+
+     ggtitle("Apple Apps Grouped by Price")
+price.plot
+
+#5 rating paid game 
+rate5game <- subset(applestore, prime_genre=='Games'&user_rating=="5"&price!="0")
+rate5game <- rate5game[order(rate5game$cont_rating, rate5game$rating_count_tot, decreasing = TRUE),]
+top20game <- rate5game[1:20,c("track_name", "price","lang.num", "sup_devices.num", "size_mb")]
+a <- inner_join(top20game,apple.des, by="track_name")
+
+#text mining based on top paid game
+gamedes <- Corpus(VectorSource(a$app_desc))
+gamedes<-tm_map(gamedes,removeNumbers)
+gamedes<-tm_map(gamedes,content_transformer(tolower))
+gamedes<-tm_map(gamedes,removePunctuation)
+gamedes<-tm_map(gamedes,removeWords,c(stopwords("SMART"),"game","app", "play", "ipad", "will", "iphone", "get", "can", "new"))
+gamedes<-tm_map(gamedes,stripWhitespace)
+gamedes<-tm_map(gamedes,stemDocument)
+
+word.gamedes<-DocumentTermMatrix(gamedes)
+freq.gamedes<-sort(colSums(as.matrix(word.gamedes)),decreasing=TRUE)
+getPalette = colorRampPalette(brewer.pal(8, "Set1"))
+wordcloud(names(freq.gamedes),colors=getPalette(colorcount), freq.gamedes,min.freq=10,max.words=100)
+
+#Max Price People Willing to Pay for Top Apps
+rate5app <- applestore[applestore$user_rating=="5",]
+
+maxprice.genre <- rate5app %>%
+            group_by(prime_genre) %>%
+            summarize(max.price=max(price))
+
+maxprice <- transform(maxprice.genre, prime_genre = reorder(prime_genre, max.price)) 
+
+
+maxprice.plot <- ggplot(maxprice, aes(x=prime_genre, y=max.price,
+                fill=getPalette(23),
+                label=max.price)) +
+    geom_bar(stat='identity', position='identity', color="black")+
+    scale_y_sqrt()+
+    coord_flip()+
+    geom_text(hjust =1.2, vjust=0.5,color="white",size=3)+
+     theme_igray()+
+     theme(legend.position="none")+
+     ggtitle("Max Price People Willing to Pay for Top Apps")
+maxprice.plot
